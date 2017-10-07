@@ -21,6 +21,9 @@ from keras import backend as K
 from keras.callbacks import ReduceLROnPlateau, ModelCheckpoint
 from keras.losses import categorical_crossentropy
 
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
+
 
 from rampwf.workflows.image_classifier import _chunk_iterator, _to_categorical, get_nb_minibatches
 
@@ -202,15 +205,11 @@ def local_get_train_valid_generators(self, batch_size=256, valid_ratio=0.3):
         ssplit = StratifiedShuffleSplit(n_splits=1, test_size=valid_ratio)
 
         train_indices, valid_indices = next(ssplit.split(self.X_array, self.y_array))
-        nb_train = len(train_indices)
+        gen_valid = self._get_generator(indices=valid_indices, batch_size=batch_size)
         nb_valid = len(valid_indices)
 
-        gen_train = self._get_generator(indices=train_indices, batch_size=batch_size)
-        gen_valid = self._get_generator(indices=valid_indices, batch_size=batch_size)
     else:
         train_indices = np.arange(self.nb_examples)
-        gen_train = self._get_generator(indices=train_indices, batch_size=batch_size)
-        nb_train = len(train_indices)
         gen_valid = None
         nb_valid = None
 
@@ -221,7 +220,38 @@ def local_get_train_valid_generators(self, batch_size=256, valid_ratio=0.3):
         if class_weights[class_index] > max_count:
             max_count = class_weights[class_index]
     for class_index in class_weights:
-        class_weights[class_index] = np.log(1.0 + (max_count / class_weights[class_index])**2)
+        class_weights[class_index] = np.log(1.0 + (max_count / class_weights[class_index]) ** 2)
+
+    # Under+Oversample training data:
+    # - undersample randomly images that count is larger a threshold
+    # - oversample randomly all images
+
+    undersampling_threshold = 350
+
+    class_counts = np.zeros((403, ), dtype=np.int)
+    for class_index in self.y_array[train_indices]:
+        class_counts[class_index] += 1
+
+    classes_to_undersample = np.where(class_counts > undersampling_threshold)[0]
+
+    train_indices_to_undersample = [index for index in train_indices if self.y_array[index] in classes_to_undersample]
+    train_indices_to_oversample = [index for index in train_indices if
+                                   self.y_array[index] not in classes_to_undersample]
+
+    rs = RandomUnderSampler()
+
+    train_indices_undersampled, new_y_array = rs.fit_sample(np.array(train_indices_to_undersample)[:, None],
+                                                            self.y_array[train_indices_to_undersample])
+    rs = RandomOverSampler()
+    new_train_indices = np.concatenate((train_indices_undersampled, np.array(train_indices_to_oversample)[:, None]))
+    new_y_array = np.concatenate((new_y_array, self.y_array[train_indices_to_oversample]))
+
+    new_train_indices, _ = rs.fit_sample(new_train_indices, new_y_array)
+    new_train_indices = new_train_indices.ravel()
+    gen_train = self._get_generator(indices=new_train_indices, batch_size=batch_size)
+    nb_train = len(new_train_indices)
+
+    self.nb_examples = nb_train + (0 if nb_valid is None else nb_valid)
 
     return gen_train, gen_valid, nb_train, nb_valid, class_weights
 

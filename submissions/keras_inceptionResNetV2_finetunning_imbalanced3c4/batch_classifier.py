@@ -2,7 +2,6 @@ from __future__ import print_function
 import os
 from collections import defaultdict
 from datetime import datetime
-from glob import glob
 
 import types
 from sklearn.model_selection import StratifiedShuffleSplit
@@ -33,7 +32,7 @@ class BatchClassifier(object):
             self.logs_path = os.environ['LOGS_PATH']
         else:
             now = datetime.now()
-            self.logs_path = 'logs_%s' % now.strftime("%Y-%m-%d-%H-%M")
+            self.logs_path = 'logs_inceptionResNetV2_finetunning_imbalanced3c4_%s' % now.strftime("%Y-%m-%d-%H-%M")
 
     def fit(self, train_gen_builder):
 
@@ -102,19 +101,14 @@ class BatchClassifier(object):
                 verbose=1
             )
         
-        
-        # Finetunning
-        layers_to_train = [
-            'block8',            
-            'conv_7b', 
-            'predictions'
-        ]
-        for l in self.model.layers:
+        # Finetunning : all layer after 'block8_1_ac'
+        index_start = self.model.layers.index(self.model.get_layer('block8_1_ac'))
+        index_end = len(self.model.layers)
+        layer_indices_to_train = list(range(index_start, index_end))
+        for index, l in enumerate(self.model.layers):
             l.trainable = False
-            for ltt in layers_to_train:
-                if ltt in l.name:
-                    l.trainable = True
-                    break
+            if index in layer_indices_to_train:
+                l.trainable = True
         
         self._compile_model(self.model, lr=0.001)
         self.model.summary()
@@ -152,7 +146,7 @@ class BatchClassifier(object):
             metrics=['accuracy', f170])
 
     def _build_model(self):
-        incResNetV2 = InceptionResNetV2(input_shape=(299, 299, 3), include_top=False, weights='imagenet')
+        incResNetV2 = InceptionResNetV2(input_shape=(451, 451, 3), include_top=False, weights='imagenet')
         x = incResNetV2.outputs[0]
         
         # Classification block
@@ -237,14 +231,6 @@ def local_get_generator(self, indices=None, batch_size=256):
     y_stats = defaultdict(int)
 
     while True:
-
-        # Display feeded dataset stats
-        # if len(y_stats) > 0:
-        #     print("\n\n------------------------------------")
-        #     print("Dataflow classes distribution : \n")
-        #     for k in y_stats:
-        #         print("'{}': {} |".format(str(k), y_stats[k]), end=' \t ')
-        #     print("\n\n------------------------------------\n\n")
 
         if self.shuffle:
             np.random.shuffle(indices)
@@ -346,7 +332,7 @@ def local_get_generator2(self, indices=None, batch_size=256):
 def get_callbacks(model, logs_path):
 
     # On plateau reduce LR callback measured on val_loss:
-    onplateau = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, verbose=1)
+    onplateau = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, verbose=1)
     callbacks = [onplateau, ]
 
     # Store best weights, measured on val_loss
@@ -355,14 +341,18 @@ def get_callbacks(model, logs_path):
     if not os.path.exists(weights_path):
         os.makedirs(weights_path)
 
-    weights_filename = os.path.join(weights_path, save_prefix + "_{epoch:02d}_val_loss={val_loss:.4f}")
-    metrics_names = list(model.metrics_names)
-    metrics_names.remove('loss')
-    for mname in metrics_names:
-        weights_filename += "_val_%s={val_%s:.4f}" % (mname, mname)
+    # weights_filename = os.path.join(weights_path, save_prefix + "_{epoch:02d}_val_loss={val_loss:.4f}")
+    # metrics_names = list(model.metrics_names)
+    # metrics_names.remove('loss')
+    # for mname in metrics_names:
+    #     weights_filename += "_val_%s={val_%s:.4f}" % (mname, mname)
+    weights_filename = os.path.join(weights_path, save_prefix + "_best_val_loss")
     weights_filename += ".h5"
 
-    model_checkpoint = ModelCheckpoint(weights_filename, monitor='val_loss', save_best_only=True, save_weights_only=False)
+    model_checkpoint = ModelCheckpoint(weights_filename,
+                                       monitor='val_loss',
+                                       save_best_only=True,
+                                       save_weights_only=False)
     callbacks.append(model_checkpoint)
 
     # Some other callback on local testing
@@ -406,11 +396,15 @@ def f170(y_true, y_pred):
 
 
 def load_pretrained_model(model, logs_path):
-    weights_files = []
-    weights_files.extend(glob(os.path.join(logs_path, "weights", "%s*.h5" % model.name)))
-    assert len(weights_files) > 0, "Failed to load weights"
-    best_weights_filename, best_val_loss = find_best_weights_file(weights_files, field_name='val_loss')
-    print("Load best loss weights: ", best_weights_filename, best_val_loss)
+
+    # weights_files = []
+    # weights_files.extend(glob(os.path.join(logs_path, "weights", "%s*.h5" % model.name)))
+    # assert len(weights_files) > 0, "Failed to load weights"
+    # best_weights_filename, best_val_loss = find_best_weights_file(weights_files, field_name='val_loss')
+    # print("Load best loss weights: ", best_weights_filename, best_val_loss)
+
+    best_weights_filename = os.path.join(logs_path, "weights", "%s_best_val_loss.h5" % model.name)
+    print("Load best loss weights: ", best_weights_filename)
     model.load_weights(best_weights_filename)
 
 
