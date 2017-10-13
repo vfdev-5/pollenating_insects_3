@@ -4,7 +4,7 @@ from imgaug import augmenters as iaa
 
 from keras.applications.imagenet_utils import preprocess_input
 
-image_size = (299, 299)  # (w, h)
+image_size = (451, 451)  # (w, h)
 
 train_geom_aug = iaa.Sequential([
     iaa.Fliplr(0.5),

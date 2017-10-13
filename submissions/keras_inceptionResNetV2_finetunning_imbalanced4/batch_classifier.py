@@ -22,7 +22,7 @@ from keras.losses import categorical_crossentropy
 
 from rampwf.workflows.image_classifier import _chunk_iterator, _to_categorical, get_nb_minibatches
 
-
+SIZE = (451, 451)
 SEED = 123456789
 
 
@@ -80,7 +80,7 @@ class BatchClassifier(object):
             self._finetunning(train_gen_builder, batch_size, valid_ratio, n_epochs)
 
         # Second step : finetunning on rare classes
-        self._finetunning_rare(train_gen_builder, batch_size, valid_ratio, n_epochs)
+        self._finetunning_rare(train_gen_builder, batch_size, valid_ratio, 15)
 
         # Load best trained model:
         load_pretrained_model(self.model, self.logs_path)
@@ -104,6 +104,8 @@ class BatchClassifier(object):
 
         self._compile_model(self.model, lr=0.001)
         self.model.summary()
+
+        self.model.name += '_finetunning'
 
         self.model.fit_generator(
             gen_train,
@@ -133,8 +135,10 @@ class BatchClassifier(object):
             if index in layer_indices_to_train:
                 l.trainable = True
 
-        self._compile_model(self.model, lr=0.001)
+        self._compile_model(self.model, lr=0.0001)
         self.model.summary()
+
+        self.model.name += '_rare'
 
         self.model.fit_generator(
             gen_train,
@@ -166,7 +170,7 @@ class BatchClassifier(object):
             metrics=['accuracy', f170])
 
     def _build_model(self):
-        incResNetV2 = InceptionResNetV2(input_shape=(299, 299, 3), include_top=False, weights='imagenet')
+        incResNetV2 = InceptionResNetV2(input_shape=SIZE + (3, ), include_top=False, weights='imagenet')
         x = incResNetV2.outputs[0]
 
         # Classification block
@@ -408,7 +412,8 @@ def local_get_rare_train_valid_generators(self, batch_size=256, valid_ratio=0.3)
         class_weights[class_index] = max_count * 1.0 / (class_weights[class_index] + 1e-7)
 
     if valid_indices is not None:
-        valid_indices = [index for index in valid_indices if self.y_array[index] in rare_classes]
+        # Validation on all classes is better than only rare
+        # valid_indices = [index for index in valid_indices if self.y_array[index] in rare_classes]
         nb_valid = len(valid_indices)
         gen_valid = self._get_generator(indices=valid_indices, batch_size=batch_size)
     else:

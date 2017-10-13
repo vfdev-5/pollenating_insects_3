@@ -23,7 +23,7 @@ from keras_contrib.applications.densenet import DenseNetImageNet161
 
 from rampwf.workflows.image_classifier import _chunk_iterator, _to_categorical, get_nb_minibatches
 
-SIZE = (512, 512)
+SIZE = (452, 452)
 SEED = 123456789
 
 
