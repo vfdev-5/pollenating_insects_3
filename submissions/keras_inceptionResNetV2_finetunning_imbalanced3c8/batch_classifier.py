@@ -5,6 +5,7 @@ from datetime import datetime
 
 import types
 from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.utils.class_weight import compute_class_weight
 
 from joblib import delayed
 from joblib import Parallel
@@ -35,12 +36,12 @@ class BatchClassifier(object):
             self.logs_path = os.environ['LOGS_PATH']
         else:
             now = datetime.now()
-            self.logs_path = 'logs_inceptionResNetV2_finetunning_imbalanced3c7_%s' % now.strftime("%Y%m%d_%H%M")
+            self.logs_path = 'logs_inceptionResNetV2_finetunning_imbalanced3c8_%s' % now.strftime("%Y%m%d_%H%M")
 
     def fit(self, train_gen_builder):
 
         valid_ratio = 0.3
-        n_epochs = 25
+        n_epochs = 15
 
         # Try to pickle transform method:
         try:
@@ -74,7 +75,7 @@ class BatchClassifier(object):
             l.trainable = False
             if index in layer_indices_to_train:
                 l.trainable = True
-        
+
         self._compile_model(self.model, lr=0.001)
         self.model.summary()
 
@@ -84,7 +85,7 @@ class BatchClassifier(object):
             epochs=n_epochs,
             max_queue_size=batch_size,
             callbacks=get_callbacks(self.model, self.logs_path),
-            class_weight=None,
+            class_weight=class_weights,
             validation_data=gen_valid,
             validation_steps=get_nb_minibatches(nb_valid, batch_size) if nb_valid is not None else None,
             verbose=1)
@@ -173,14 +174,7 @@ def local_get_train_valid_generators(self, batch_size=256, valid_ratio=0.3):
         gen_valid = None
         nb_valid = None
 
-    class_weights = defaultdict(int)
-    max_count = 0
-    for class_index in self.y_array[train_indices]:
-        class_weights[class_index] += 1
-        if class_weights[class_index] > max_count:
-            max_count = class_weights[class_index]
-    for class_index in class_weights:
-        class_weights[class_index] = 1.0 + (max_count / class_weights[class_index])
+    class_weights = compute_class_weight('balanced', list(range(403)), self.y_array[train_indices])
 
     return gen_train, gen_valid, nb_train, nb_valid, class_weights
 
@@ -300,7 +294,7 @@ def local_get_generator2(self, indices=None, batch_size=256):
 # ================================================================================================================
 # =============== Keras callbacks and metrics ====================================================================
 
-def step_decay(epoch, model, base=2.0, period=50, init_epoch=0, verbose=False):
+def step_decay(epoch, model, base=2.0, period=50, verbose=False):
     lr = K.get_value(model.optimizer.lr)
     factor = 1.0 / base if epoch > 0 and epoch % period == 0 else 1.0
     new_lr = lr * factor
@@ -317,7 +311,7 @@ def get_callbacks(model, logs_path):
     callbacks.append(onplateau)
 
     # LR schedule: step decay
-    step_decay_f = lambda epoch: step_decay(epoch, model=model, base=1.5, period=4, verbose=True)
+    step_decay_f = lambda epoch: step_decay(epoch, model=model, base=1.2, period=3, verbose=True)
     lrscheduler = LearningRateScheduler(step_decay_f)
     callbacks.append(lrscheduler)
 

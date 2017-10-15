@@ -42,6 +42,14 @@ class BatchClassifier(object):
         valid_ratio = 0.3
         n_epochs = 25
 
+        if 'LOCAL_TESTING' in os.environ:
+            print("\n\n------------------------------")
+            print("-------- LOCAL TESTING -------")
+            print("------------------------------\n\n")
+            if 'LOAD_BEST_MODEL' in os.environ:
+                load_pretrained_model(self.model, self.logs_path)
+                return
+
         # Try to pickle transform method:
         try:
             import pickle
@@ -74,7 +82,7 @@ class BatchClassifier(object):
             l.trainable = False
             if index in layer_indices_to_train:
                 l.trainable = True
-        
+
         self._compile_model(self.model, lr=0.001)
         self.model.summary()
 
@@ -300,7 +308,7 @@ def local_get_generator2(self, indices=None, batch_size=256):
 # ================================================================================================================
 # =============== Keras callbacks and metrics ====================================================================
 
-def step_decay(epoch, model, base=2.0, period=50, init_epoch=0, verbose=False):
+def step_decay(epoch, model, base=2.0, period=50, verbose=False):
     lr = K.get_value(model.optimizer.lr)
     factor = 1.0 / base if epoch > 0 and epoch % period == 0 else 1.0
     new_lr = lr * factor
