@@ -6,6 +6,7 @@ from keras_contrib.applications.densenet import preprocess_input
 
 SIZE = (452, 452)  # (w, h)
 
+
 train_geom_aug = iaa.Sequential([
     iaa.Fliplr(0.5),
     iaa.Flipud(0.5),
@@ -18,6 +19,7 @@ train_geom_aug = iaa.Sequential([
         mode='edge'
     ))),
 ])
+
 
 train_color_aug = iaa.Sequential([
     iaa.OneOf([

@@ -20,7 +20,7 @@ from keras import backend as K
 from keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, LearningRateScheduler
 from keras.losses import categorical_crossentropy
 
-from keras_contrib.applications.densenet import DenseNetImageNet161
+from keras_contrib.applications.densenet import DenseNetImageNet169
 
 from rampwf.workflows.image_classifier import _chunk_iterator, _to_categorical, get_nb_minibatches
 
@@ -36,11 +36,11 @@ class BatchClassifier(object):
             self.logs_path = os.environ['LOGS_PATH']
         else:
             now = datetime.now()
-            self.logs_path = 'logs_DenseNet161_finetunning_imbalanced2a_%s' % now.strftime("%Y%m%d_%H%M")
+            self.logs_path = 'logs_DenseNet169_finetunning_imbalanced3_%s' % now.strftime("%Y%m%d_%H%M")
 
     def fit(self, train_gen_builder):
 
-        valid_ratio = 0.20
+        valid_ratio = 0.2
         n_epochs = 15
 
         if 'LOCAL_TESTING' in os.environ:
@@ -66,8 +66,8 @@ class BatchClassifier(object):
         train_gen_builder.n_jobs = 10
         train_gen_builder.shuffle = True
 
-        batch_size = 64
-        train_gen_builder.chunk_size = batch_size * 10
+        batch_size = 24
+        train_gen_builder.chunk_size = batch_size * 8
 
         gen_train, gen_valid, nb_train, nb_valid, class_weights = \
             train_gen_builder.get_train_valid_generators(batch_size=batch_size,
@@ -75,13 +75,16 @@ class BatchClassifier(object):
 
         print("Train dataset size: {} | Validation dataset size: {}".format(nb_train, nb_valid))
 
-        # Finetunning : all layer after 3rd 'average_pooling2d'
-        last_average_pooling_lname = ""
+        # Finetunning : all layer after 2nd 'average_pooling2d'
+        second_average_pooling_lname = ""
+        count = 0
         for l in self.model.layers:
             if 'average_pooling2d' in l.name:
-                last_average_pooling_lname = l.name
+                count += 1
+                if count == 2:
+                    second_average_pooling_lname = l.name
 
-        index_start = self.model.layers.index(self.model.get_layer(last_average_pooling_lname))
+        index_start = self.model.layers.index(self.model.get_layer(second_average_pooling_lname))
         index_end = len(self.model.layers)
         layer_indices_to_train = list(range(index_start, index_end))
         for index, l in enumerate(self.model.layers):
@@ -89,12 +92,12 @@ class BatchClassifier(object):
             if index in layer_indices_to_train:
                 l.trainable = True
 
-        self._compile_model(self.model, lr=0.0012345)
+        self._compile_model(self.model, lr=0.000756789)
         self.model.summary()
 
         self.model.fit_generator(
             gen_train,
-            steps_per_epoch=get_nb_minibatches(nb_train, batch_size) * 2,
+            steps_per_epoch=2 * get_nb_minibatches(nb_train, batch_size),
             epochs=n_epochs,
             max_queue_size=batch_size,
             callbacks=get_callbacks(self.model, self.logs_path),
@@ -125,7 +128,7 @@ class BatchClassifier(object):
             metrics=['accuracy', f170])
 
     def _build_model(self):
-        densenet = DenseNetImageNet161(input_shape=SIZE + (3, ), include_top=False, weights='imagenet')
+        densenet = DenseNetImageNet169(input_shape=SIZE + (3, ), include_top=False, weights='imagenet')
         x = densenet.outputs[0]
         # Classification block
         x = GlobalAveragePooling2D(name='avg_pool')(x)
@@ -133,7 +136,7 @@ class BatchClassifier(object):
         out = Dense(403, activation='softmax', name='predictions')(x)
 
         model = Model(densenet.inputs, out)
-        model.name = "DenseNet161"
+        model.name = "DenseNet169"
         return model
 
 
@@ -319,11 +322,11 @@ def get_callbacks(model, logs_path):
 
     callbacks = []
     # On plateau reduce LR callback measured on val_loss:
-    onplateau = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=1, verbose=1)
+    onplateau = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, verbose=1)
     callbacks.append(onplateau)
 
     # LR schedule: step decay
-    step_decay_f = lambda epoch: step_decay(epoch, model=model, base=1.2, period=1, verbose=True)
+    step_decay_f = lambda epoch: step_decay(epoch, model=model, base=1.3, period=3, verbose=True)
     lrscheduler = LearningRateScheduler(step_decay_f)
     callbacks.append(lrscheduler)
 
